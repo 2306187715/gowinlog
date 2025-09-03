@@ -105,26 +105,32 @@ func RenderEventValues(renderContext SysRenderContext, eventHandle EventHandle) 
 
 // Render the event as XML.
 func RenderEventXML(eventHandle EventHandle) (string, error) {
-	var bufferUsed, propertyCount uint32
+    var bufferUsed, propertyCount uint32
 
-	err := EvtRender(0, syscall.Handle(eventHandle), EvtRenderEventXml, 0, nil, &bufferUsed, &propertyCount)
+    err := EvtRender(0, syscall.Handle(eventHandle),
+        EvtRenderEventXml, 0, nil, &bufferUsed, &propertyCount)
+    if bufferUsed == 0 {
+        return "", err
+    }
 
-	if bufferUsed == 0 {
-		return "", err
-	}
+    buffer := make([]byte, bufferUsed)
 
-	buffer := make([]byte, bufferUsed)
-	bufSize := bufferUsed
+    err = EvtRender(0, syscall.Handle(eventHandle),
+        EvtRenderEventXml, bufferUsed, (*uint16)(unsafe.Pointer(&buffer[0])),
+        &bufferUsed, &propertyCount)
+    if err != nil {
+        return "", err
+    }
 
-	err = EvtRender(0, syscall.Handle(eventHandle), EvtRenderEventXml, bufSize, (*uint16)(unsafe.Pointer(&buffer[0])), &bufferUsed, &propertyCount)
-	if err != nil {
-		return err.Error(), err
-	}
+	// fix: decode UTF-16LE to UTF-8
+    utf16Decoder := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder()
+    reader := transform.NewReader(bytes.NewReader(buffer), utf16Decoder)
+    decoded, decErr := ioutil.ReadAll(reader)
+    if decErr != nil {
+        return "", decErr
+    }
 
-	// Remove null bytes
-	xml := bytes.Replace(buffer, []byte("\x00"), []byte{}, -1)
-
-	return string(xml), nil
+    return string(decoded), nil
 }
 
 /* Get a handle that represents the publisher of the event, given the rendered event values. */
