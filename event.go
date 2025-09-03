@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package winlog
@@ -5,6 +6,9 @@ package winlog
 import (
 	"bytes"
 	"fmt"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
+	"io/ioutil"
 	"syscall"
 	"unsafe"
 )
@@ -12,8 +16,9 @@ import (
 /*Functionality related to events and listening to the event log*/
 
 // Get a handle to a render context which will render properties from the System element.
-//    Wraps EvtCreateRenderContext() with Flags = EvtRenderContextSystem. The resulting
-//    handle must be closed with CloseEventHandle.
+//
+//	Wraps EvtCreateRenderContext() with Flags = EvtRenderContextSystem. The resulting
+//	handle must be closed with CloseEventHandle.
 func GetSystemRenderContext() (SysRenderContext, error) {
 	context, err := EvtCreateRenderContext(0, 0, EvtRenderContextSystem)
 	if err != nil {
@@ -22,9 +27,12 @@ func GetSystemRenderContext() (SysRenderContext, error) {
 	return SysRenderContext(context), nil
 }
 
-/* Get a handle for a event log subscription on the given channel.
-   `query` is an XPath expression to filter the events on the channel - "*" allows all events.
-   The resulting handle must be closed with CloseEventHandle. */
+/*
+Get a handle for a event log subscription on the given channel.
+
+	`query` is an XPath expression to filter the events on the channel - "*" allows all events.
+	The resulting handle must be closed with CloseEventHandle.
+*/
 func CreateListener(channel, query string, startpos EVT_SUBSCRIBE_FLAGS, watcher *LogEventCallbackWrapper) (ListenerHandle, error) {
 	wideChan, err := syscall.UTF16PtrFromString(channel)
 	if err != nil {
@@ -41,10 +49,13 @@ func CreateListener(channel, query string, startpos EVT_SUBSCRIBE_FLAGS, watcher
 	return ListenerHandle(listenerHandle), nil
 }
 
-/* Get a handle for an event log subscription on the given channel. Will begin at the
-   bookmarked event, or the closest possible event if the log has been truncated.
-   `query` is an XPath expression to filter the events on the channel - "*" allows all events.
-   The resulting handle must be closed with CloseEventHandle. */
+/*
+Get a handle for an event log subscription on the given channel. Will begin at the
+
+	bookmarked event, or the closest possible event if the log has been truncated.
+	`query` is an XPath expression to filter the events on the channel - "*" allows all events.
+	The resulting handle must be closed with CloseEventHandle.
+*/
 func CreateListenerFromBookmark(channel, query string, watcher *LogEventCallbackWrapper, bookmarkHandle BookmarkHandle) (ListenerHandle, error) {
 	wideChan, err := syscall.UTF16PtrFromString(channel)
 	if err != nil {
@@ -84,9 +95,12 @@ func GetLastError() error {
 	return syscall.GetLastError()
 }
 
-/* Render the system properties from the event and returns an array of properties.
-   Properties can be accessed using RenderStringField, RenderIntField, RenderFileTimeField,
-   or RenderUIntField depending on type. This buffer must be freed after use. */
+/*
+Render the system properties from the event and returns an array of properties.
+
+	Properties can be accessed using RenderStringField, RenderIntField, RenderFileTimeField,
+	or RenderUIntField depending on type. This buffer must be freed after use.
+*/
 func RenderEventValues(renderContext SysRenderContext, eventHandle EventHandle) (EvtVariant, error) {
 	var bufferUsed uint32 = 0
 	var propertyCount uint32 = 0
@@ -105,32 +119,32 @@ func RenderEventValues(renderContext SysRenderContext, eventHandle EventHandle) 
 
 // Render the event as XML.
 func RenderEventXML(eventHandle EventHandle) (string, error) {
-    var bufferUsed, propertyCount uint32
+	var bufferUsed, propertyCount uint32
 
-    err := EvtRender(0, syscall.Handle(eventHandle),
-        EvtRenderEventXml, 0, nil, &bufferUsed, &propertyCount)
-    if bufferUsed == 0 {
-        return "", err
-    }
+	err := EvtRender(0, syscall.Handle(eventHandle),
+		EvtRenderEventXml, 0, nil, &bufferUsed, &propertyCount)
+	if bufferUsed == 0 {
+		return "", err
+	}
 
-    buffer := make([]byte, bufferUsed)
+	buffer := make([]byte, bufferUsed)
 
-    err = EvtRender(0, syscall.Handle(eventHandle),
-        EvtRenderEventXml, bufferUsed, (*uint16)(unsafe.Pointer(&buffer[0])),
-        &bufferUsed, &propertyCount)
-    if err != nil {
-        return "", err
-    }
+	err = EvtRender(0, syscall.Handle(eventHandle),
+		EvtRenderEventXml, bufferUsed, (*uint16)(unsafe.Pointer(&buffer[0])),
+		&bufferUsed, &propertyCount)
+	if err != nil {
+		return "", err
+	}
 
 	// fix: decode UTF-16LE to UTF-8
-    utf16Decoder := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder()
-    reader := transform.NewReader(bytes.NewReader(buffer), utf16Decoder)
-    decoded, decErr := ioutil.ReadAll(reader)
-    if decErr != nil {
-        return "", decErr
-    }
+	utf16Decoder := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder()
+	reader := transform.NewReader(bytes.NewReader(buffer), utf16Decoder)
+	decoded, decErr := ioutil.ReadAll(reader)
+	if decErr != nil {
+		return "", decErr
+	}
 
-    return string(decoded), nil
+	return string(decoded), nil
 }
 
 /* Get a handle that represents the publisher of the event, given the rendered event values. */
