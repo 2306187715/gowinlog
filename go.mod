@@ -1,4 +1,4 @@
-module github.com/2306187715/gowinlog
+module github.com/jiatianzhao/gowinlog
 
 go 1.24.0
 
